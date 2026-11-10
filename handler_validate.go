@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 )
 
 func handlerValidate(w http.ResponseWriter, r *http.Request) {
@@ -27,12 +28,30 @@ func handlerValidate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type returnVals struct {
-		Valid bool `json:"valid"`
+		CleanedBody string `json:"cleaned_body"`
 	}
 
 	respBody := returnVals{
-		Valid: true,
+		CleanedBody: cleanProfanity(params.Body),
 	}
 
 	respondWithJSON(w, http.StatusOK, respBody)
+}
+
+func cleanProfanity(body string) string {
+	profanity := map[string] bool{
+		"kerfuffle": true,
+		"sharbert": true,
+		"fornax": true,
+	}
+
+	words := strings.Split(body, " ")
+	
+	for i, word := range words {
+		if profanity[strings.ToLower(word)] {
+			words[i] = "****"
+		}
+	}
+
+	return strings.Join(words, " ")
 }
