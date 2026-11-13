@@ -5,12 +5,20 @@ import (
 	"os"
 	"net/http"
 	"database/sql"
-
+	"sync/atomic"
+	
 	"github.com/joho/godotenv"
 	"github.com/wNRG/chirpy/internal/database"
 
 	_ "github.com/lib/pq"
 )
+
+type apiConfig struct {
+	db *database.Queries
+	fileserverHits atomic.Int32
+	platform string
+}
+
 
 func main() {
 	const rootPath = "."
@@ -18,26 +26,34 @@ func main() {
 	const port = "8080"
 	
 	godotenv.Load()
-
 	dbURL := os.Getenv("DB_URL")
-	db, err := sql.Open("postgres", dbURL)
+	platform := os.Getenv("PLATFORM")
+	if dbURL == "" {
+		log.Fatal("DB_URL must be set")
+	}
+
+	dbConn, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Println("%s", err)
 	}
 	
-	defer db.Close()
-	dbQueries := database.New(db)
+	dbQueries := database.New(dbConn)
 
 	apiCfg := apiConfig {
-		dbQueries: dbQueries,
+		db: dbQueries,
+		platform: platform,
 	}
 
 	mux := http.NewServeMux()
 	mux.Handle(fileServerPath, apiCfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir(rootPath)))))
+
 	mux.HandleFunc("GET /api/healthz", handlerReadiness)
 	mux.HandleFunc("GET /admin/metrics", apiCfg.handlerMetrics) 
 	mux.HandleFunc("POST /admin/reset", apiCfg.handlerReset)
-	mux.HandleFunc("POST /api/validate_chirp", handlerValidate)
+	mux.HandleFunc("POST /api/users", apiCfg.handlerCreateUser)
+	mux.HandleFunc("POST /api/chirps", apiCfg.handlerCreateChirp)
+	mux.HandleFunc("GET /api/chirps", apiCfg.handlerGetChirps)
+	mux.HandleFunc("GET /api/chirps/{chirpID}", apiCfg.handlerGetChirp)
 
 	server := &http.Server{
 		Addr: ":" + port,
