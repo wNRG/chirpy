@@ -1,30 +1,30 @@
 package main
 
 import (
-	"net/http"
-	"encoding/json"
-	"log"
-	"time"
-	"strings"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"log"
+	"net/http"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/wNRG/chirpy/internal/auth"
 	"github.com/wNRG/chirpy/internal/database"
 )
 
 type Chirp struct {
-	ID 	uuid.UUID `json:"id"`
-	CreatedAt	time.Time `json:"created_at"`
-	UpdatedAt	time.Time `json:"updated_at"`
-	Body 	string `json:"body"`
-	UserID 	uuid.UUID `json:"user_id"`
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Body      string    `json:"body"`
+	UserID    uuid.UUID `json:"user_id"`
 }
 
 func (cfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Request) {
 	type parameters struct {
 		Body string `json:"body"`
-		UserID uuid.UUID `json:"user_id"`
 	}
 
 	params := parameters{}
@@ -42,11 +42,22 @@ func (cfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	userID := params.UserID
 	cleanedBody := cleanProfanity(params.Body)
-	
+
+	tokenString, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Invalid authorization header")
+		return
+	}
+
+	userID, err := auth.ValidateJWT(tokenString, cfg.tokenSecret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Invalid or expired token")
+		return
+	}
+
 	chirp, err := cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{
-		Body: cleanedBody,
+		Body:   cleanedBody,
 		UserID: userID,
 	})
 
@@ -57,13 +68,13 @@ func (cfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Request)
 	}
 
 	respondWithJSON(w, http.StatusCreated, Chirp{
-		ID: chirp.ID,
+		ID:        chirp.ID,
 		CreatedAt: chirp.CreatedAt,
 		UpdatedAt: chirp.UpdatedAt,
-		Body: chirp.Body,
-		UserID: chirp.UserID,
+		Body:      chirp.Body,
+		UserID:    chirp.UserID,
 	})
-} 
+}
 
 func (cfg *apiConfig) handlerGetChirps(w http.ResponseWriter, r *http.Request) {
 	chirps, err := cfg.db.GetAllChirps(r.Context())
@@ -72,16 +83,16 @@ func (cfg *apiConfig) handlerGetChirps(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't retrieve chirps")
 		return
 	}
-	
+
 	response := []Chirp{}
 
 	for _, chirp := range chirps {
 		response = append(response, Chirp{
-			ID: chirp.ID,
+			ID:        chirp.ID,
 			CreatedAt: chirp.CreatedAt,
 			UpdatedAt: chirp.UpdatedAt,
-			Body: chirp.Body,
-			UserID: chirp.UserID,
+			Body:      chirp.Body,
+			UserID:    chirp.UserID,
 		})
 	}
 
@@ -108,29 +119,29 @@ func (cfg *apiConfig) handlerGetChirp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, Chirp{
-		ID: chirp.ID,
+		ID:        chirp.ID,
 		CreatedAt: chirp.CreatedAt,
 		UpdatedAt: chirp.UpdatedAt,
-		Body: chirp.Body,
-		UserID: chirp.UserID,
+		Body:      chirp.Body,
+		UserID:    chirp.UserID,
 	})
 
-} 
+}
 
 func cleanProfanity(body string) string {
-	profanity := map[string] bool{
+	profanity := map[string]bool{
 		"kerfuffle": true,
-		"sharbert": true,
-		"fornax": true,
+		"sharbert":  true,
+		"fornax":    true,
 	}
 
 	words := strings.Fields(body)
-	
+
 	for i, word := range words {
 		cleaned := strings.Trim(word, ".,!?;:\"'()[]{}")
 
 		if profanity[strings.ToLower(cleaned)] {
-			words[i] = strings.Replace(word, cleaned, "****", 1) 
+			words[i] = strings.Replace(word, cleaned, "****", 1)
 		}
 	}
 

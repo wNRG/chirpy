@@ -5,22 +5,23 @@ import (
 	"log"
 	"net/http"
 	"time"
-	
+
 	"github.com/google/uuid"
 	"github.com/wNRG/chirpy/internal/auth"
 	"github.com/wNRG/chirpy/internal/database"
 )
 
 type User struct {
-	ID	uuid.UUID `json:"id"`
-	CreatedAt	time.Time `json:"created_at"`
-	UpdatedAt	time.Time `json:"updated_at"`
-	Email	string `json:"email"`
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email     string    `json:"email"`
 }
 
 type parameters struct {
-	Email string `json:"email"`
-	Password string `json:"password"`
+	Email            string `json:"email"`
+	Password         string `json:"password"`
+	ExpiresInSeconds int    `json:"expires_in_seconds"`
 }
 
 func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) {
@@ -43,9 +44,9 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) 
 	}
 
 	user, err := cfg.db.CreateUser(r.Context(), database.CreateUserParams{
-		Email: params.Email,
+		Email:          params.Email,
 		HashedPassword: hashedPassword,
-	}) 
+	})
 	if err != nil {
 		log.Printf("Error creating user: %s", err)
 		respondWithError(w, http.StatusInternalServerError, "Couldn't create user")
@@ -53,10 +54,10 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) 
 	}
 
 	respondWithJSON(w, http.StatusCreated, User{
-		ID: user.ID,
+		ID:        user.ID,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
-		Email: user.Email,
+		Email:     user.Email,
 	})
 }
 
@@ -83,10 +84,34 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, User{
-		ID: user.ID,
+	expiresIn := time.Hour
+
+	if params.ExpiresInSeconds > 0 {
+		expiresIn = time.Duration(params.ExpiresInSeconds) * time.Second
+	}
+
+	if expiresIn > time.Hour {
+		expiresIn = time.Hour
+	}
+
+	token, err := auth.MakeJWT(user.ID, cfg.tokenSecret, expiresIn)
+	if err != nil {
+		log.Printf("Error creating JWT: %s", err)
+		respondWithError(w, http.StatusInternalServerError, "Couldn't create token")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, struct {
+		ID        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Email     string    `json:"email"`
+		Token     string    `json:"token"`
+	}{
+		ID:        user.ID,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
-		Email: user.Email,
+		Email:     user.Email,
+		Token:     token,
 	})
 }

@@ -1,8 +1,8 @@
 package auth
 
 import (
-	"time"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -77,4 +77,53 @@ func TestJWT(t *testing.T) {
 			t.Fatal("expected token signed with wrong secret to be rejected")
 		}
 	})
+}
+
+func TestGetBearerToken(t *testing.T) {
+	tests := []struct {
+		name    string
+		header  string
+		want    string
+		wantErr bool
+	}{
+		{
+			name:   "valid bearer token",
+			header: "Bearer test-token",
+			want:   "test-token",
+		},
+		{
+			name:    "missing authorization header",
+			header:  "",
+			wantErr: true,
+		},
+		{
+			name:    "invalid authorization scheme",
+			header:  "Basic test-token",
+			wantErr: true,
+		},
+		{
+			name:    "missing token",
+			header:  "Bearer",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			headers := http.Header{}
+			if tt.header != "" {
+				headers.Set("Authorization", tt.header)
+			}
+
+			got, err := GetBearerToken(headers)
+
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("GetBearerToken() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if got != tt.want {
+				t.Errorf("GetBearerToken() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }

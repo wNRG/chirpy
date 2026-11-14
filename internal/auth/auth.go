@@ -1,9 +1,11 @@
 package auth
 
 import (
-	"fmt"
-	"time"
 	"errors"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
 
 	"github.com/alexedwards/argon2id"
 	"github.com/golang-jwt/jwt/v5"
@@ -44,7 +46,7 @@ func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (str
 		ExpiresAt: jwt.NewNumericDate(now.Add(expiresIn)),
 		Subject:   userID.String(),
 	})
-	
+
 	return token.SignedString(signingKey)
 }
 
@@ -76,10 +78,24 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 	if issuer != string(TokenTypeAccess) {
 		return uuid.Nil, errors.New("invalid issuer")
 	}
-	
+
 	id, err := uuid.Parse(userID)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("invalid userID: %w", err)
 	}
 	return id, nil
+}
+
+func GetBearerToken(headers http.Header) (string, error) {
+	authHeader := headers.Get("Authorization")
+	if authHeader == "" {
+		return "", fmt.Errorf("authorization header is missing")
+	}
+
+	parts := strings.Fields(authHeader)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		return "", fmt.Errorf("invalid authorization header format")
+	}
+
+	return parts[1], nil
 }
