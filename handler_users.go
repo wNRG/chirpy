@@ -19,9 +19,8 @@ type User struct {
 }
 
 type parameters struct {
-	Email            string `json:"email"`
-	Password         string `json:"password"`
-	ExpiresInSeconds int    `json:"expires_in_seconds"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
 }
 
 func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) {
@@ -62,6 +61,11 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) 
 }
 
 func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
+	type response struct {
+		User         User   `json:"user"`
+		Token        string `json:"token"`
+		RefreshToken string `json:"refresh_token"`
+	}
 	params := parameters{}
 
 	decoder := json.NewDecoder(r.Body)
@@ -84,34 +88,37 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	expiresIn := time.Hour
-
-	if params.ExpiresInSeconds > 0 {
-		expiresIn = time.Duration(params.ExpiresInSeconds) * time.Second
-	}
-
-	if expiresIn > time.Hour {
-		expiresIn = time.Hour
-	}
-
-	token, err := auth.MakeJWT(user.ID, cfg.tokenSecret, expiresIn)
+	accessToken, err := auth.MakeJWT(user.ID, cfg.tokenSecret, time.Hour)
 	if err != nil {
 		log.Printf("Error creating JWT: %s", err)
 		respondWithError(w, http.StatusInternalServerError, "Couldn't create token")
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, struct {
-		ID        uuid.UUID `json:"id"`
-		CreatedAt time.Time `json:"created_at"`
-		UpdatedAt time.Time `json:"updated_at"`
-		Email     string    `json:"email"`
-		Token     string    `json:"token"`
-	}{
-		ID:        user.ID,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
-		Email:     user.Email,
-		Token:     token,
+	refreshToken := auth.MakeRefreshToken()
+	now := time.Now().UTC()
+
+	_, err = cfg.db.CreateRefreshToken(r.Context(), database.CreateRefreshTokenParams{
+		Token:     refreshToken,
+		CreatedAt: now,
+		UpdatedAt: now,
+		UserID:    user.ID,
+		ExpiresAt: now.Add(60 * 24 * time.Hour),
+	})
+	if err != nil {
+		log.Printf("Error creating refresh token: %s", err)
+		respondWithError(w, http.StatusInternalServerError, "Couldn't create refresh token")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, response{
+		User: User{
+			ID:        user.ID,
+			CreatedAt: user.CreatedAt,
+			UpdatedAt: user.UpdatedAt,
+			Email:     user.Email,
+		},
+		Token:        accessToken,
+		RefreshToken: refreshToken,
 	})
 }
